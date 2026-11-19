@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>产线设备智能诊断智能体</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230935BF'/%3E%3Cpath d='M4 12h4l2.5-6 3.5 12 2.5-6H20' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#F2F4F9; --panel:#fff; --ink:#0F1B3D; --ink2:#46526E; --ink3:#8A94A8; --line:#E5E9F2; --soft:#F5F7FB;
+  --brand:#0935BF; --brand2:#2F6BFF; --brand-soft:#EAF0FF;
+  --ok:#12A150; --ok-soft:#E6F6EC; --warn:#C2610C; --warn-soft:#FFF1E3; --bad:#D92D20; --bad-soft:#FDECEA;
+  --teal:#0B8F7F; --teal-soft:#E3F5F2;
+  --shadow:0 1px 2px rgba(15,27,61,.04),0 6px 20px rgba(15,27,61,.06);
+  --num:"Bahnschrift","DIN Alternate","Segoe UI",sans-serif;
+  --mono:"Cascadia Mono","Consolas",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
+svg.i{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.125em}
+.mono{font-family:var(--mono)}
+
+/* ---------- 顶栏 ---------- */
+#top{flex:0 0 56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;color:#fff;position:relative;overflow:hidden;
+  background:linear-gradient(95deg,#0A2585 0%,#0935BF 48%,#2A66F5 100%)}
+#top:after{content:"";position:absolute;right:-80px;top:-150px;width:460px;height:340px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,255,255,.17),transparent);pointer-events:none}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);display:grid;place-items:center;font-size:19px}
+.brand .t1{font-size:18.5px;font-weight:700;letter-spacing:.5px;line-height:1.25}
+.brand .t2{font-size:10px;letter-spacing:2.4px;opacity:.72;line-height:1.3}
+.pills{display:flex;gap:8px;z-index:1}
+.pill{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.24);font-size:12.5px}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:#FFC53D}
+.pill.on .dot{background:#4ADE80;box-shadow:0 0 0 3px rgba(74,222,128,.25)}
+.pill svg{font-size:14px;opacity:.9}
+
+/* ---------- 布局 ---------- */
+main{flex:1;min-height:0;display:grid;grid-template-columns:212px minmax(0,1fr) 348px;gap:14px;padding:14px 16px}
+body.sb-off main{grid-template-columns:minmax(0,1fr) 348px}
+body.sb-off #hist{display:none}
+.card{background:var(--panel);border-radius:16px;box-shadow:var(--shadow)}
+
+/* ---------- 左侧：对话记录 ---------- */
+#hist{display:flex;flex-direction:column;min-height:0;padding:12px 10px 8px}
+.btn-new{display:flex;align-items:center;justify-content:center;gap:7px;height:38px;border-radius:11px;border:1.5px solid #CFDBFF;background:var(--brand-soft);color:var(--brand);font-weight:600;font-size:14px;cursor:pointer;flex:none}
+.btn-new:hover{background:#DDE7FF}
+.btn-new:disabled{opacity:.55;cursor:default}
+#h-list{flex:1;min-height:0;overflow-y:auto;margin:8px -4px 0;padding:0 4px}
+.h-group{font-size:11.5px;color:var(--ink3);padding:8px 8px 3px}
+.h-item{display:flex;align-items:center;gap:8px;height:34px;padding:0 6px 0 8px;border-radius:9px;font-size:13.5px;color:var(--ink2);cursor:pointer}
+.h-item.fresh{animation:rise .3s ease both}
+.h-item:hover{background:var(--soft)}
+.h-item.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.h-item>svg{font-size:14px;color:var(--ink3)}
+.h-item.on>svg{color:var(--brand)}
+.h-item .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-del{display:none;width:24px;height:24px;border-radius:6px;border:0;background:transparent;color:var(--ink3);place-items:center;cursor:pointer;font-size:14px;flex:none}
+.h-item:hover .h-del{display:grid}
+.h-del:hover{background:#fff;color:var(--bad)}
+.h-del.arm{display:grid;background:var(--bad);color:#fff}
+.h-empty{font-size:12.5px;color:var(--ink3);text-align:center;padding:26px 8px;line-height:1.75}
+.h-empty svg{display:block;margin:0 auto 6px;font-size:22px;color:#C3CBDD}
+.h-foot{flex:none;font-size:11px;color:var(--ink3);text-align:center;padding-top:7px;border-top:1px solid var(--line);margin-top:6px}
+
+/* ---------- 对话区 ---------- */
+#chatwrap{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.chat-hd{flex:0 0 48px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px 0 10px;border-bottom:1px solid var(--line)}
+.chat-hd .who{display:flex;align-items:center;gap:9px;min-width:0}
+.chat-hd b{font-size:15px;white-space:nowrap}
+.chat-hd .sub{font-size:12.5px;color:var(--ink3);margin-left:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-hd .sub.t{color:var(--ink2)}
+.icon-btn{width:32px;height:32px;border-radius:8px;border:0;background:transparent;color:var(--ink2);font-size:17px;display:grid;place-items:center;cursor:pointer;flex:none}
+.icon-btn:hover{background:var(--soft)}
+.ava{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:16px;flex:none}
+.ava.bot{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}
+.ava.me{background:#DDE5F7;color:var(--brand);font-size:12.5px;font-weight:700}
+.btn-ghost{display:none;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink2);font-size:13px;cursor:pointer;white-space:nowrap;flex:none}
+body.sb-off .btn-ghost{display:inline-flex}
+.btn-ghost:hover{background:var(--soft)}
+.btn-ghost:disabled{opacity:.5;cursor:default}
+#chat{flex:1;min-height:0;overflow-y:auto;padding:18px 22px 8px;scroll-behavior:smooth}
+#chat::-webkit-scrollbar,#trace::-webkit-scrollbar,#h-list::-webkit-scrollbar{width:8px}
+#chat::-webkit-scrollbar-thumb,#trace::-webkit-scrollbar-thumb,#h-list::-webkit-scrollbar-thumb{background:#D5DBE8;border-radius:4px}
+
+/* ---------- 欢迎页 ---------- */
+#welcome{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:8px}
+#welcome .big{width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;font-size:28px;display:grid;place-items:center;box-shadow:0 10px 24px rgba(9,53,191,.28)}
+#welcome h2{font-size:22px;margin-top:14px}
+#welcome p{color:var(--ink2);font-size:14.5px;margin-top:4px}
+.caps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px;width:100%;max-width:720px}
+.cap{border:1px solid var(--line);border-radius:14px;padding:12px 13px 11px;text-align:left;background:#fff}
+.cap .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;margin-bottom:8px}
+.cap b{display:block;font-size:14px}
+.cap span{display:block;font-size:12.5px;color:var(--ink3);line-height:1.5;margin-top:2px}
+.c-brand .ic,.ic.c-brand{background:var(--brand-soft);color:var(--brand)}
+.c-teal .ic,.ic.c-teal{background:var(--teal-soft);color:var(--teal)}
+.c-warn .ic,.ic.c-warn{background:var(--warn-soft);color:var(--warn)}
+.try{margin-top:16px;font-size:12.5px;color:var(--ink3)}
+#chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:780px}
+.chip{font-size:13px;color:var(--brand);background:var(--brand-soft);border:1px solid #D5E0FF;border-radius:999px;padding:5px 13px;cursor:pointer}
+.chip:hover{background:#DDE7FF}
+
+/* ---------- 消息 ---------- */
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.row{display:flex;gap:10px;margin-bottom:16px;animation:rise .25s ease both}
+.row.user{justify-content:flex-end}
+.row.user .bubble{max-width:76%;background:linear-gradient(135deg,var(--brand),#2459E8);color:#fff;font-size:15.5px;line-height:1.55;padding:10px 15px;border-radius:16px 16px 4px 16px;box-shadow:0 4px 12px rgba(9,53,191,.22)}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.txt{animation:rise .22s ease both;max-width:100%}
+.txt.say{background:var(--soft);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:7px 13px;font-size:14.5px}
+.txt.say .fh{display:none}
+.txt.final{align-self:stretch;background:#fff;border:1px solid #CFDBFF;border-radius:14px;box-shadow:0 6px 18px rgba(9,53,191,.10);overflow:hidden}
+.txt.final .fh{display:flex;align-items:center;gap:8px;padding:8px 14px;background:linear-gradient(90deg,#EAF0FF,#F7F9FF);color:var(--brand);font-weight:700;font-size:14px;border-bottom:1px solid #DCE5FF}
+.txt.final .fh svg{font-size:16px}
+.txt.final .fb{padding:9px 16px 12px;font-size:14.5px;line-height:1.7}
+.md h4{font-size:15px;margin:8px 0 2px}
+.md p{margin:3px 0}
+.md ul,.md ol{padding-left:20px;margin:2px 0}
+.md li{margin:1px 0}
+.md li.h{list-style:none;margin:7px 0 1px -20px;font-size:15px}
+.md ul:first-child li.h:first-child{margin-top:2px}
+.md strong{color:#0A2585}
+.md code{font-family:var(--mono);font-size:.9em;background:var(--soft);padding:0 4px;border-radius:4px}
+.md table{border-collapse:collapse;margin:6px 0;font-size:13.5px}
+.md td,.md th{border:1px solid var(--line);padding:3px 9px;text-align:left}
+.md th{background:var(--soft)}
+.think{display:inline-flex;align-items:center;gap:8px;color:var(--ink3);font-size:13px;padding:3px 2px}
+.dots{display:inline-flex;gap:4px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--brand2);animation:bounce 1s infinite ease-in-out}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+.errbox{align-self:stretch;background:var(--bad-soft);border:1px solid #F9CFCB;color:var(--bad);border-radius:12px;padding:8px 13px;font-size:14px}
+
+/* ---------- 工具卡片 ---------- */
+.tool{align-self:stretch;border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;animation:rise .22s ease both}
+.tool .th{display:flex;align-items:center;gap:9px;padding:8px 12px;background:#FAFBFE;border-bottom:1px solid var(--line)}
+.tool.running .th{border-bottom-color:transparent}
+.tool .ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:15px;flex:none}
+.tool .tt{font-size:14.5px;font-weight:700;white-space:nowrap}
+.tg{font-size:12px;font-weight:600;padding:0 9px;line-height:20px;border-radius:999px;background:#fff;color:var(--ink2);border:1px solid var(--line);white-space:nowrap}
+.tg.lite{font-weight:400;color:var(--ink3)}
+.tag{display:inline-block;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:20px;white-space:nowrap}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tool .fn{margin-left:auto;font:11.5px var(--mono);color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tool .st{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink3);min-width:62px;justify-content:flex-end;white-space:nowrap}
+.tool .st.ok{color:var(--ok);font-weight:600;font-family:var(--mono)}
+.tool .st.err{color:var(--bad);font-weight:600}
+.spin{width:13px;height:13px;border:2px solid #CBD5EE;border-top-color:var(--brand2);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.tool .tb{padding:11px 14px 12px;font-size:14px;animation:rise .2s ease both}
+.empty{color:var(--ink3);font-size:13.5px}
+pre.raw{font:12.5px var(--mono);white-space:pre-wrap;max-height:200px;overflow:auto;color:var(--ink2)}
+
+.grid{width:100%;border-collapse:collapse;font-size:13.5px}
+.grid th{font-weight:600;color:var(--ink3);text-align:left;padding:2px 9px 5px;font-size:12.5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.grid td{padding:6px 9px;border-bottom:1px solid #F0F2F7}
+.grid tr:last-child td{border-bottom:0}
+.grid td.id{font-family:var(--mono);font-weight:600;color:var(--brand);white-space:nowrap}
+.more-rows{font-size:12.5px;color:var(--ink3);margin-top:6px}
+
+.det{display:grid;grid-template-columns:148px 1fr;gap:18px;align-items:center}
+.gauge{display:flex;flex-direction:column;align-items:center;gap:1px}
+.ring{position:relative;width:84px;height:84px}
+.ring svg{width:84px;height:84px;transform:rotate(-90deg)}
+.ring .bg{stroke:#EDF0F6}
+.ring .fg{stroke-linecap:round;transition:stroke-dashoffset .7s ease}
+.ring .v{position:absolute;inset:0;display:grid;place-items:center;font:700 21px var(--num)}
+.gauge .l{font-size:12.5px;color:var(--ink2);margin-top:3px}
+.gauge .m{font:11.5px var(--mono);color:var(--ink3)}
+.bars{display:grid;grid-template-columns:80px 1fr 40px;gap:5px 10px;align-items:center;font-size:13px}
+.bars .t{grid-column:1/-1;font-size:12px;color:var(--ink3);margin-bottom:1px}
+.bars .n.top{font-weight:700;color:var(--bad)}
+.track{height:10px;border-radius:5px;background:#EEF1F7;overflow:hidden}
+.fill{height:100%;border-radius:5px;background:#B9C6E6;width:0;transition:width .7s ease}
+.fill.top{background:linear-gradient(90deg,#F26A5E,#D92D20)}
+.bars .p{font:600 12.5px var(--mono);text-align:right;color:var(--ink2)}
+.calm{display:flex;align-items:center;gap:12px;color:var(--ok)}
+.calm svg{font-size:30px}
+.calm b{display:block;font-size:15px}
+.calm span{display:block;font-size:12.5px;color:var(--ink3)}
+
+.rep .head{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.rep .head .k{font-size:13px;color:var(--ink3)}
+.rep .fault{font-size:17px;font-weight:700}
+.rep .ln{display:flex;gap:10px;align-items:flex-start;margin-top:6px;font-size:13.5px}
+.rep .ln .k{flex:none;display:inline-flex;align-items:center;gap:6px;color:var(--ink3);width:88px;line-height:22px}
+.rep .ln .k svg{font-size:14px}
+.rep .ln .v{flex:1;min-width:0;line-height:22px}
+.hrow{display:flex;gap:10px}
+.hrow .id{font:600 12.5px/22px var(--mono);color:var(--brand);flex:none}
+.hrow .d{color:var(--ink3);flex:none}
+.mini{display:inline-flex;align-items:center;gap:7px;padding:0 9px;margin:0 6px 4px 0;line-height:22px;border-radius:8px;background:var(--soft);border:1px solid var(--line);font-size:12.5px}
+.mini .s{font-weight:600;color:var(--ok)}
+.mini.bad{background:var(--bad-soft);border-color:#F9CFCB;color:var(--bad);font-weight:700}
+.mini.bad .s{color:var(--bad)}
+.rbtn{margin-top:9px;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 13px;border-radius:8px;border:1px solid var(--brand);background:#fff;color:var(--brand);font-weight:600;font-size:13px;cursor:pointer}
+.rbtn:hover{background:var(--brand-soft)}
+
+/* ---------- 输入区 ---------- */
+#composer{flex:none;padding:10px 18px 9px;border-top:1px solid var(--line);background:#fff}
+.inputrow{display:flex;align-items:center;gap:8px;height:46px;border:1.5px solid #D5DCEB;border-radius:14px;padding:0 5px 0 16px;background:#fff;transition:border-color .15s,box-shadow .15s}
+.inputrow:focus-within{border-color:var(--brand2);box-shadow:0 0 0 4px rgba(47,107,255,.12)}
+#q{flex:1;min-width:0;border:0;outline:0;font:inherit;font-size:15px;color:var(--ink);background:transparent}
+#q::placeholder{color:#A6AEC0}
+#send{width:36px;height:36px;border-radius:10px;border:0;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;font-size:17px;display:grid;place-items:center;cursor:pointer;flex:none}
+#send:disabled{background:#C5D0EC;cursor:default}
+.hint{font-size:11.5px;color:var(--ink3);text-align:center;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- 右侧 ---------- */
+#side{display:flex;flex-direction:column;gap:12px;min-height:0}
+#side .card{padding:13px 15px}
+.ctitle{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:700;margin-bottom:10px}
+.ctitle svg{color:var(--brand);font-size:15px}
+.ctitle .more{margin-left:auto;font-weight:400;font-size:11.5px;color:var(--ink3)}
+.node{position:relative;display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line);border-radius:10px;background:#fff;padding:6px 8px;font-size:13px;color:var(--ink2);transition:border-color .2s,background .2s,box-shadow .2s,color .2s}
+.node svg{font-size:15px;color:var(--ink3);transition:color .2s}
+.node.on{border-color:var(--brand2);background:var(--brand-soft);color:var(--brand);box-shadow:0 0 0 4px rgba(47,107,255,.14)}
+.node.on svg{color:var(--brand)}
+.node.c-teal.on{border-color:var(--teal);background:var(--teal-soft);color:var(--teal);box-shadow:0 0 0 4px rgba(11,143,127,.14)}
+.node.c-teal.on svg{color:var(--teal)}
+.node.c-warn.on{border-color:var(--warn);background:var(--warn-soft);color:var(--warn);box-shadow:0 0 0 4px rgba(194,97,12,.14)}
+.node.c-warn.on svg{color:var(--warn)}
+.node.llm{font-weight:600;color:var(--ink)}
+.node .cnt{position:absolute;top:-8px;right:-6px;min-width:19px;height:19px;border-radius:10px;background:var(--brand);color:#fff;font:600 11.5px/19px var(--num);text-align:center;padding:0 5px;display:none;box-shadow:0 0 0 2px #fff}
+.node.c-teal .cnt{background:var(--teal)}
+.node.c-warn .cnt{background:var(--warn)}
+.wire{position:relative;height:14px}
+.wire:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--line);transition:background .2s}
+.wire.fan{height:32px}
+.wire.fan:after{content:"";position:absolute;left:16.66%;right:16.66%;top:22px;bottom:0;border:2px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;transition:border-color .2s}
+.wire .lab{position:absolute;left:50%;top:2px;transform:translateX(-50%);z-index:1;background:#fff;border:1px solid var(--line);border-radius:999px;padding:0 9px;font:11px/17px var(--mono);color:var(--ink3);white-space:nowrap;transition:color .2s,border-color .2s}
+.wire.on:before{background:var(--brand2)}
+.wire.fan.on:after{border-color:var(--brand2)}
+.wire.on .lab{color:var(--brand);border-color:var(--brand2)}
+.tools3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tools3 .node{flex-direction:column;gap:1px;padding:7px 4px 6px;font-size:12.5px}
+.tools3 .node svg{font-size:17px}
+
+#tracecard{flex:1;min-height:0;display:flex;flex-direction:column}
+#trace{flex:1;min-height:0;overflow-y:auto;margin-right:-6px;padding-right:6px}
+.tr-empty{color:var(--ink3);font-size:12.5px;text-align:center;padding:26px 10px 0;line-height:1.75}
+.tr-empty svg{display:block;margin:0 auto 6px;font-size:22px;color:#C3CBDD}
+.tr{position:relative;display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:9px;padding:5px 2px;font-size:13px;animation:rise .2s ease both}
+.tr .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--num);color:#fff;background:var(--brand);z-index:1}
+.tr.c-teal .n{background:var(--teal)}
+.tr.c-warn .n{background:var(--warn)}
+.tr.c-done .n{background:var(--ok)}
+.tr:not(:last-child):after{content:"";position:absolute;left:12px;top:26px;bottom:-5px;width:2px;margin-left:-1px;background:var(--line)}
+.tr .lb{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr .lb b{font-weight:600}
+.tr .lb span{color:var(--ink3);margin-left:7px;font:12px var(--mono)}
+.tr .tm{font:12px var(--mono);color:var(--ink3);display:inline-flex;align-items:center;gap:5px}
+.tr .tm.ok{color:var(--ok)}
+.tr .tm.err{color:var(--bad)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--soft);border-radius:12px;padding:8px 11px 7px}
+.stat .l{font-size:11.5px;color:var(--ink3)}
+.stat .v{font:700 25px/1.15 var(--num);color:var(--ink);white-space:nowrap}
+.stat .v small{font:500 12px "Microsoft YaHei UI","Microsoft YaHei",sans-serif;color:var(--ink3);margin-left:4px}
+
+/* ---------- 报告弹层 ---------- */
+#overlay{position:fixed;inset:0;background:rgba(10,20,50,.5);backdrop-filter:blur(3px);display:none;padding:24px 60px;z-index:20}
+#overlay.show{display:block;animation:fade .2s ease both}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+#modal{height:100%;background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.35);animation:pop .22s ease both}
+@keyframes pop{from{transform:scale(.97) translateY(8px)}to{transform:none}}
+.mh{flex:0 0 44px;display:flex;align-items:center;gap:9px;padding:0 9px 0 16px;border-bottom:1px solid var(--line);font-size:13.5px}
+.mh>svg{color:var(--warn);font-size:16px}
+.mh .name{font:12px var(--mono);color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#rx{margin-left:auto;width:30px;height:30px;border-radius:8px;border:0;background:transparent;color:var(--ink2);font-size:17px;display:grid;place-items:center;cursor:pointer;flex:none}
+#rx:hover{background:var(--soft)}
+#rf{flex:1;border:0;width:100%;background:var(--bg)}
+</style>
+</head>
+<body>
+<header id="top">
+  <div class="brand">
+    <div class="logo"><i data-i="pulse"></i></div>
+    <div><div class="t1">产线设备智能诊断智能体</div><div class="t2">EQUIPMENT DIAGNOSIS AGENT</div></div>
+  </div>
+  <div class="pills">
+    <span class="pill" id="p-mcp"><span class="dot"></span><span id="p-mcp-t">MCP 连接中…</span></span>
+    <span class="pill"><i data-i="chip"></i><span class="mono" id="p-model">…</span></span>
+  </div>
+</header>
+
+<main>
+  <aside class="card" id="hist">
+    <button class="btn-new" id="h-new"><i data-i="plus"></i>新对话</button>
+    <div id="h-list"></div>
+    <div class="h-foot" id="h-foot">对话记录保存在本机</div>
+  </aside>
+
+  <section class="card" id="chatwrap">
+    <div class="chat-hd">
+      <div class="who">
+        <button class="icon-btn" id="sb-toggle" title="显示 / 隐藏对话记录"><i data-i="panel"></i></button>
+        <div class="ava bot"><i data-i="bot"></i></div><b>设备诊断助手</b><span class="sub" id="c-title">大模型规划 · MCP 工具执行</span>
+      </div>
+      <button class="btn-ghost" id="newchat"><i data-i="plus"></i>新对话</button>
+    </div>
+    <div id="chat">
+      <div id="welcome">
+        <div class="big"><i data-i="bot"></i></div>
+        <h2>你好，我是设备诊断助手</h2>
+        <p>告诉我你关心的产线或设备，我会自动检测异常、定位原因并生成报告。</p>
+        <div class="caps">
+          <div class="cap c-brand"><div class="ic"><i data-i="pulse"></i></div><b>多传感器异常检测</b><span>自编码器联合分析 5 路信号，定位异常传感器</span></div>
+          <div class="cap c-teal"><div class="ic"><i data-i="db"></i></div><b>MES 数据查询</b><span>设备台账、维修工单、备件库存</span></div>
+          <div class="cap c-warn"><div class="ic"><i data-i="file"></i></div><b>诊断报告生成</b><span>疑似故障、检查建议、历史工单和趋势图</span></div>
+        </div>
+        <div class="try">可以这样问</div>
+        <div id="chips">
+          <span class="chip">缸体线的设备最近 24 小时有没有异常？有的话出个诊断报告，看看备件够不够。</span>
+          <span class="chip">CNC-02 最近 12 小时运行正常吗？</span>
+          <span class="chip">冷却系统相关的历史维修工单有哪些？</span>
+        </div>
+      </div>
+    </div>
+    <div id="composer">
+      <div class="inputrow"><input id="q" placeholder="向设备诊断助手提问，例如：缸盖线的设备状态怎么样？" autocomplete="off"><button id="send" title="发送"><i data-i="send"></i></button></div>
+      <div class="hint">回答由大模型根据工具返回的数据生成，诊断结论为“疑似”，需现场确认</div>
+    </div>
+  </section>
+
+  <aside id="side">
+    <div class="card">
+      <div class="ctitle"><i data-i="flow"></i>调用链</div>
+      <div class="node" id="n-user"><i data-i="user"></i>用户提问（自然语言）</div>
+      <div class="wire" id="w1"></div>
+      <div class="node llm" id="n-llm"><i data-i="spark"></i>大模型 · 理解问题、规划调用</div>
+      <div class="wire fan" id="w2"><span class="lab">MCP 协议</span></div>
+      <div class="tools3">
+        <div class="node c-teal" id="n-db"><i data-i="db"></i>MES 查询<b class="cnt"></b></div>
+        <div class="node c-brand" id="n-det"><i data-i="pulse"></i>异常检测<b class="cnt"></b></div>
+        <div class="node c-warn" id="n-rep"><i data-i="file"></i>诊断报告<b class="cnt"></b></div>
+      </div>
+    </div>
+    <div class="card" id="tracecard">
+      <div class="ctitle"><i data-i="list"></i>执行轨迹<span class="more">每一步由大模型自主决定</span></div>
+      <div id="trace"></div>
+    </div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="l">工具调用</div><div class="v"><span id="s-calls">0</span><small>次</small></div></div>
+        <div class="stat"><div class="l">用时</div><div class="v"><span id="s-sec">0.0</span><small>秒</small></div></div>
+        <div class="stat"><div class="l">涉及工具</div><div class="v"><span id="s-tools">0</span><small>/ 3</small></div></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div id="overlay"><div id="modal">
+  <div class="mh"><i data-i="file"></i><b>诊断报告</b><span class="name" id="rname"></span><button id="rx" title="关闭"><i data-i="x"></i></button></div>
+  <iframe id="rf" title="诊断报告"></iframe>
+</div></div>
+
+<script>
+/* ---------- 图标 ---------- */
+const P={
+  pulse:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  db:'<ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5V12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V5.5"/><path d="M4.5 12v6.5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V12"/>',
+  file:'<path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/>',
+  bot:'<rect x="4" y="8" width="16" height="11" rx="3.5"/><path d="M12 8V5"/><circle cx="12" cy="3.8" r="1.2"/><path d="M9 12.8v1.6M15 12.8v1.6"/><path d="M2 12.5v2.5M22 12.5v2.5"/>',
+  user:'<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.6-3.4 3.5-5 7-5s6.4 1.6 7 5"/>',
+  send:'<path d="M21 3L10 14"/><path d="M21 3l-6.5 18-4.5-7-7-4.5z"/>',
+  check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  checkc:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+  ext:'<path d="M8 16L17 7"/><path d="M9 7h8v8"/>',
+  chip:'<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><rect x="10" y="10" width="4" height="4" rx=".6"/><path d="M9.5 3v3.5M14.5 3v3.5M9.5 17.5V21M14.5 17.5V21M3 9.5h3.5M3 14.5h3.5M17.5 9.5H21M17.5 14.5H21"/>',
+  tool:'<path d="M14.5 6.2a4.2 4.2 0 0 0-5.3 5.3L3.5 17.2l3.3 3.3 5.7-5.7a4.2 4.2 0 0 0 5.3-5.3l-2.7 2.7-2.6-.7-.7-2.6z"/>',
+  hist:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  box:'<path d="M20.5 8L12 3.5 3.5 8v8L12 20.5l8.5-4.5z"/><path d="M3.5 8L12 12.5 20.5 8"/><path d="M12 12.5v8"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  flow:'<rect x="3" y="3.5" width="7" height="5" rx="1.2"/><rect x="14" y="15.5" width="7" height="5" rx="1.2"/><path d="M6.5 8.5v5a2.5 2.5 0 0 0 2.5 2.5h5"/>',
+  list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.2 6h.1M4.2 12h.1M4.2 18h.1"/>',
+  spark:'<path d="M11 3.5l1.9 4.9 4.9 1.9-4.9 1.9L11 17l-1.9-4.8-4.9-1.9 4.9-1.9z"/><path d="M18.5 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  msg:'<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-6.5L8 20.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z"/>',
+  trash:'<path d="M4.5 7h15M9.5 7V4.5h5V7"/><path d="M6.8 7l.9 12a1.5 1.5 0 0 0 1.5 1.4h5.6a1.5 1.5 0 0 0 1.5-1.4l.9-12"/><path d="M10.3 11v5.5M13.7 11v5.5"/>',
+  panel:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+};
+const I=n=>`<svg class="i" viewBox="0 0 24 24">${P[n]||''}</svg>`;
+document.querySelectorAll('[data-i]').forEach(e=>{e.outerHTML=I(e.dataset.i);});
+
+/* ---------- 基础 ---------- */
+const $=s=>document.querySelector(s);
+const chat=$('#chat'), trace=$('#trace');
+const WELCOME=chat.innerHTML;
+const SUB_DEFAULT='大模型规划 · MCP 工具执行';
+let busy=false, stick=true, traceN=0;
+let convs=[], currentId=null;                       // 对话记录
+const stat={calls:0,tools:new Set(),sec:0,t0:0,live:false,timer:null};
+window.__ready=false; window.__done=false; window.__stats=null;
+
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const num=(v,d=2)=>Number(v).toFixed(d);
+
+function md(src){
+  const lines=esc(src).split('\n'); let out='',list=null,table=[];
+  const inl=s=>s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  const flushList=()=>{if(list){out+=`</${list}>`;list=null;}};
+  const flushTable=()=>{if(table.length){const rows=table.filter(r=>!/^\s*\|?\s*:?-{2,}/.test(r));
+    out+='<table>'+rows.map((r,i)=>'<tr>'+r.replace(/^\s*\||\|\s*$/g,'').split('|').map(c=>i?`<td>${inl(c.trim())}</td>`:`<th>${inl(c.trim())}</th>`).join('')+'</tr>').join('')+'</table>';table=[];}};
+  for(const l of lines){
+    if(/^\s*\|/.test(l)){flushList();table.push(l);continue;} flushTable();
+    let m;
+    if(/^\s*-{3,}\s*$/.test(l)){flushList();}
+    else if(m=l.match(/^\s*#{1,4}\s+(.*)/)){flushList();out+=`<h4>${inl(m[1])}</h4>`;}
+    else if(m=l.match(/^\s*[-*•]\s+(.*)/)){const b=inl(m[1]),head=/^<strong>[^<]*<\/strong>[：:]?$/.test(b);
+      if(list!=='ul'){flushList();out+='<ul>';list='ul';}out+=`<li${head?' class="h"':''}>${b}</li>`;}
+    else if(m=l.match(/^\s*\d+[.)、]\s*(.*)/)){if(list!=='ol'){flushList();out+='<ol>';list='ol';}out+=`<li>${inl(m[1])}</li>`;}
+    else if(l.trim()===''){flushList();}
+    else {flushList();out+=`<p>${inl(l)}</p>`;}
+  }
+  flushList();flushTable();return out;
+}
+
+function scroll(){ if(stick) chat.scrollTop=chat.scrollHeight; }
+chat.addEventListener('wheel',e=>{ if(e.deltaY<0) stick=false; else if(chat.scrollHeight-chat.scrollTop-chat.clientHeight<80) stick=true; },{passive:true});
+
+/* ---------- 右侧面板 ---------- */
+function light(ids){
+  document.querySelectorAll('.node,.wire').forEach(n=>n.classList.remove('on'));
+  ids.forEach(i=>{const n=i&&document.getElementById(i); if(n) n.classList.add('on');});
+}
+function resetCounts(){ document.querySelectorAll('.node .cnt').forEach(b=>{b.textContent='';b.style.display='none';}); }
+function bump(id){ const b=id&&document.querySelector('#'+id+' .cnt'); if(!b) return; b.textContent=(+b.textContent||0)+1; b.style.display='block'; }
+function traceReset(){ traceN=0; trace.innerHTML=`<div class="tr-empty">${I('list')}提问后，这里会实时显示<br>智能体依次调用了哪些工具</div>`; }
+function traceAdd(cls,label,sub){
+  if(!traceN) trace.innerHTML='';
+  traceN++;
+  const d=document.createElement('div'); d.className='tr c-'+cls;
+  d.innerHTML=`<div class="n">${traceN}</div><div class="lb"><b>${esc(label)}</b>${sub?`<span>${esc(sub)}</span>`:''}</div><div class="tm"><span class="spin"></span></div>`;
+  trace.appendChild(d); trace.scrollTop=trace.scrollHeight; return d;
+}
+function traceDone(d,text,ok=true){ if(!d) return; const t=d.querySelector('.tm'); t.className='tm '+(ok?'ok':'err'); t.innerHTML=I(ok?'check':'x')+esc(text); }
+function traceRemove(d){ if(d&&d.parentNode){ d.remove(); traceN--; } }
+function renderStats(){
+  const sec=stat.live?(performance.now()-stat.t0)/1000:stat.sec;
+  $('#s-calls').textContent=stat.calls; $('#s-sec').textContent=sec.toFixed(1); $('#s-tools').textContent=stat.tools.size;
+}
+function resetSide(){
+  clearInterval(stat.timer); stat.calls=0; stat.tools=new Set(); stat.sec=0; stat.live=false;
+  resetCounts(); traceReset(); renderStats(); light([]);
+}
+
+/* ---------- 工具结果渲染 ---------- */
+const TOOL={
+  query_equipment_records:{c:'teal',ic:'db',node:'n-db'},
+  detect_multisensor_anomaly:{c:'brand',ic:'pulse',node:'n-det'},
+  generate_diagnosis_report:{c:'warn',ic:'file',node:'n-rep'},
+};
+function toolTitle(name,a){
+  if(name==='query_equipment_records'){
+    const t={equipment:'查询设备台账',work_orders:'查询维修工单',spare_parts:'查询备件库存'}[a.query_type]||'查询 MES';
+    return [t,a.equipment_id||a.keyword||''];
+  }
+  if(name==='detect_multisensor_anomaly') return ['多传感器异常检测',a.equipment_id||''];
+  if(name==='generate_diagnosis_report') return ['生成诊断报告',a.equipment_id||''];
+  return [name,''];
+}
+const COLZH={equipment_id:'设备编号',name:'名称',model:'型号',line:'产线',workshop:'车间',commission_date:'投产日期',status:'状态',owner:'负责人',last_maintenance:'上次维护',
+  order_id:'工单号',created_at:'日期',closed_at:'关闭时间',fault_type:'故障类型',description:'现象',cause:'原因',action:'处理措施',downtime_h:'停机/h',technician:'维修人',
+  part_no:'料号',stock:'库存',location:'库位',applicable_model:'适用型号'};
+/* 每类查询按重要程度排列的列；对话区窄的时候只显示前几列 */
+const COLS={
+  equipment:['equipment_id','name','model','line','status','last_maintenance','owner'],
+  work_orders:['order_id','equipment_id','created_at','fault_type','action','downtime_h'],
+  spare_parts:['part_no','name','stock','location','applicable_model'],
+};
+function cell(col,v){
+  if(v===null||v===undefined) return '<td></td>';
+  if(col==='equipment_id'||col==='order_id'||col==='part_no') return `<td class="id">${esc(v)}</td>`;
+  if(col==='status') return `<td><span class="tag ${/运行|已关闭|正常/.test(v)?'ok':'warn'}">${esc(v)}</span></td>`;
+  if(col==='stock') return `<td><span class="tag ${+v===0?'bad':'ok'}">${+v===0?'0 · 需采购':esc(v)}</span></td>`;
+  if(col==='created_at') return `<td>${esc(String(v).slice(0,10))}</td>`;
+  return `<td>${esc(v)}</td>`;
+}
+function renderQuery(a,r){
+  if(!Array.isArray(r)) return `<pre class="raw">${esc(JSON.stringify(r,null,1))}</pre>`;
+  if(!r.length) return '<div class="empty">没有查到记录</div>';
+  const w=chat.clientWidth, keep=w>900?7:w>720?6:5;
+  const cols=(COLS[a.query_type]||Object.keys(r[0])).filter(c=>c in r[0]).slice(0,keep);
+  const max=6;
+  return '<table class="grid"><tr>'+cols.map(c=>`<th>${esc(COLZH[c]||c)}</th>`).join('')+'</tr>'+
+    r.slice(0,max).map(e=>'<tr>'+cols.map(c=>cell(c,e[c])).join('')+'</tr>').join('')+'</table>'+
+    (r.length>max?`<div class="more-rows">共 ${r.length} 条，仅显示前 ${max} 条</div>`:'');
+}
+function renderDetect(r){
+  const ratio=Math.min(1,+r.anomaly_ratio||0), pct=Math.round(ratio*100);
+  const abnormal=(r.anomaly_segments||0)>0;
+  const col=abnormal?(ratio>0.3?'var(--bad)':'var(--warn)'):'var(--ok)';
+  const C=2*Math.PI*36;
+  const sc=Object.entries(r.sensor_contribution||{});
+  let right;
+  if(abnormal&&sc.length){
+    const mx=sc[0][1]||1;
+    right='<div class="bars"><div class="t">各传感器对重构误差的贡献（越大越可疑）</div>'+
+      sc.map(([k,v],i)=>`<div class="n ${i?'':'top'}">${esc(k)}</div><div class="track"><div class="fill ${i?'':'top'}" data-w="${(v/mx*100).toFixed(1)}"></div></div><div class="p">${Math.round(v*100)}%</div>`).join('')+'</div>';
+  }else{
+    right=`<div class="calm">${I('checkc')}<div><b>未发现持续异常</b><span>5 路传感器之间的耦合关系保持正常</span></div></div>`;
+  }
+  return `<div class="det"><div class="gauge"><div class="ring"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36" fill="none" stroke-width="8"/>`+
+    `<circle class="fg" cx="42" cy="42" r="36" fill="none" stroke-width="8" stroke="${col}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${C.toFixed(1)}" data-off="${(C*(1-ratio)).toFixed(1)}"/></svg>`+
+    `<div class="v" style="color:${col}">${pct}%</div></div><div class="l">异常时间占比</div><div class="m">峰值 ${num(r.max_score)} / 阈值 ${num(r.threshold)}</div></div>${right}</div>`;
+}
+function renderReport(r){
+  const sev=r.status||'';
+  const sevCls=sev==='正常'?'ok':(sev==='严重'?'bad':'warn');
+  const fn=String(r.report_path||'').split(/[\\/]/).pop();
+  const btn=fn?`<button class="rbtn" data-r="${esc(fn)}">${I('ext')}查看诊断报告</button>`:'';
+  if(sev==='正常'||!r.suspected_fault){
+    return `<div class="rep"><div class="calm">${I('checkc')}<div><b>设备运行正常</b><span>${esc(r.conclusion||'')}</span></div></div>${btn}</div>`;
+  }
+  const hist=(r.similar_history||[]).map(s=>{const m=String(s).match(/^(\S+)\s+(\S+)\s+(.*)$/);
+    return m?`<div class="hrow"><span class="id">${esc(m[1])}</span><span class="d">${esc(m[2])}</span><span>${esc(m[3])}</span></div>`:`<div class="hrow"><span>${esc(s)}</span></div>`;}).join('')||'<span class="empty">无</span>';
+  const parts=(r.spare_parts||[]).map(s=>{const m=String(s).match(/^(.*)（库存\s*(\d+)[，,]\s*(.*)）$/);
+    if(!m) return `<span class="mini">${esc(s)}</span>`;
+    const zero=+m[2]===0;
+    return `<span class="mini ${zero?'bad':''}">${esc(m[1])}<span class="s">${zero?'库存 0 · 需采购':'库存 '+m[2]}</span></span>`;}).join('')||'<span class="empty">无</span>';
+  return `<div class="rep"><div class="head"><span class="tag ${sevCls}">${esc(sev)}</span><span class="k">疑似故障</span><span class="fault">${esc(r.suspected_fault)}</span></div>`+
+    `<div class="ln"><span class="k">${I('tool')}建议检查</span><span class="v">${esc(r.check_items||'—')}</span></div>`+
+    `<div class="ln"><span class="k">${I('hist')}历史工单</span><span class="v">${hist}</span></div>`+
+    `<div class="ln"><span class="k">${I('box')}备件库存</span><span class="v">${parts}</span></div>${btn}</div>`;
+}
+function renderResult(name,a,r){
+  try{
+    if(name==='query_equipment_records') return renderQuery(a,r);
+    if(name==='detect_multisensor_anomaly'&&r&&typeof r==='object') return renderDetect(r);
+    if(name==='generate_diagnosis_report'&&r&&typeof r==='object') return renderReport(r);
+  }catch(e){}
+  return `<pre class="raw">${esc(typeof r==='string'?r:JSON.stringify(r,null,1))}</pre>`;
+}
+function animate(el){ setTimeout(()=>{
+  el.querySelectorAll('[data-w]').forEach(f=>{f.style.width=f.dataset.w+'%';});
+  el.querySelectorAll('[data-off]').forEach(c=>{c.style.strokeDashoffset=c.dataset.off;});
+},40); }
+
+/* ---------- 报告弹层 ---------- */
+function openReport(f){ $('#rname').textContent=f; $('#rf').src='/reports/'+encodeURIComponent(f); $('#overlay').classList.add('show'); }
+function closeReport(){ $('#overlay').classList.remove('show'); $('#rf').src='about:blank'; }
+$('#rx').onclick=closeReport;
+$('#overlay').addEventListener('click',e=>{ if(e.target.id==='overlay') closeReport(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeReport(); });
+chat.addEventListener('click',e=>{
+  const b=e.target.closest('.rbtn'); if(b){ openReport(b.dataset.r); return; }
+  const c=e.target.closest('.chip'); if(c){ $('#q').value=c.textContent; $('#q').focus(); }
+});
+
+/* ---------- 一轮对话的渲染（实时对话和重放历史共用） ---------- */
+function addRow(cls,html){ const d=document.createElement('div'); d.className='row '+cls; d.innerHTML=html; chat.appendChild(d); scroll(); return d; }
+function beginTurn(text){
+  const w=$('#welcome'); if(w) w.remove();
+  resetSide();
+  addRow('user',`<div class="bubble">${esc(text)}</div><div class="ava me">我</div>`);
+  return addRow('agent',`<div class="ava bot">${I('bot')}</div><div class="col"></div>`).querySelector('.col');
+}
+function makeTurn(col){
+  let think=null, cur=null, lastTxt=null, concl=null;
+  const cards={}, T={finalText:''};
+  const showThink=()=>{ if(!think){ think=document.createElement('div'); think.className='think'; think.innerHTML='<span class="dots"><i></i><i></i><i></i></span>正在思考…'; col.appendChild(think); scroll(); } };
+  const hideThink=()=>{ if(think){ think.remove(); think=null; } };
+  const promote=t=>{ if(t.final) return; t.final=true; t.el.classList.replace('say','final'); if(!concl) concl=traceAdd('done','汇总结论',''); };
+  const demote=t=>{ if(!t.final) return; t.final=false; t.el.classList.replace('final','say'); traceRemove(concl); concl=null; };
+  const errbox=msg=>{ hideThink(); const d=document.createElement('div'); d.className='errbox'; d.textContent=msg; col.appendChild(d); scroll(); };
+  T.fail=errbox;
+  T.handle=ev=>{
+    if(ev.type==='thinking'){ light(['n-llm']); showThink(); cur=null; }
+    else if(ev.type==='text_delta'){
+      hideThink();
+      if(!cur){ const el=document.createElement('div'); el.className='txt say'; el.innerHTML=`<div class="fh">${I('checkc')}结论</div><div class="fb md"></div>`; col.appendChild(el); cur={el,txt:'',final:false}; lastTxt=cur; }
+      cur.txt+=ev.content;
+      if(!cur.final&&(cur.txt.length>70||cur.txt.includes('\n'))) promote(cur);
+      cur.el.querySelector('.fb').innerHTML=md(cur.txt); scroll();
+    }
+    else if(ev.type==='text_end'){ if(cur) T.finalText=cur.txt; cur=null; }
+    else if(ev.type==='tool_call'){
+      hideThink(); if(lastTxt) demote(lastTxt);
+      const a=ev.args||{}, meta=TOOL[ev.name]||{c:'brand',ic:'tool',node:null};
+      const [title,target]=toolTitle(ev.name,a);
+      const el=document.createElement('div'); el.className='tool running c-'+meta.c;
+      el.innerHTML=`<div class="th"><div class="ic">${I(meta.ic)}</div><span class="tt">${esc(title)}</span>`+
+        (target?`<span class="tg">${esc(target)}</span>`:'')+(a.last_hours&&col.clientWidth>700?`<span class="tg lite">最近 ${esc(Number(a.last_hours))} 小时</span>`:'')+
+        `<span class="fn">${esc(ev.name)}</span><span class="st"><span class="spin"></span>调用中</span></div><div class="tb" style="display:none"></div>`;
+      col.appendChild(el); scroll();
+      cards[ev.id]={el,name:ev.name,args:a,meta,tr:traceAdd(meta.c,title,target)};
+      light(['n-llm','w2',meta.node]);
+    }
+    else if(ev.type==='tool_result'){
+      const c=cards[ev.id]; stat.calls++; stat.tools.add(ev.name); renderStats();
+      if(!c) return;
+      bump(c.meta.node);
+      c.el.classList.remove('running');
+      const st=c.el.querySelector('.st'), tb=c.el.querySelector('.tb'), secs=num(ev.seconds||0)+' s';
+      if(ev.is_error){
+        st.className='st err'; st.innerHTML=I('x')+'出错';
+        tb.innerHTML=`<div class="errbox">${esc(typeof ev.result==='string'?ev.result:JSON.stringify(ev.result))}</div>`;
+        traceDone(c.tr,'出错',false);
+      }else{
+        st.className='st ok'; st.innerHTML=I('check')+secs;
+        tb.innerHTML=renderResult(c.name,c.args,ev.result);
+        traceDone(c.tr,secs);
+        if(c.name==='detect_multisensor_anomaly'&&ev.result&&typeof ev.result==='object'){
+          const ab=(ev.result.anomaly_segments||0)>0;
+          c.el.querySelector('.fn').insertAdjacentHTML('beforebegin',`<span class="tag ${ab?'bad':'ok'}">${ab?'异常':'正常'}</span>`);
+        }
+      }
+      tb.style.display='block'; animate(c.el); scroll();
+    }
+    else if(ev.type==='done'){ hideThink(); const t=cur||lastTxt; if(t){ promote(t); T.finalText=t.txt; } traceDone(concl,'完成'); light([]); }
+    else if(ev.type==='error'){ errbox('出错：'+ev.message); }
+  };
+  return T;
+}
+
+/* ---------- 左侧：对话记录 ---------- */
+const localISO=()=>{ const d=new Date(); return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,19); };
+function groupOf(iso){
+  const d=new Date(iso), n=new Date(); if(isNaN(d)) return '更早';
+  const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
+  const diff=Math.round((day(n)-day(d))/86400000);
+  return diff<=0?'今天':diff===1?'昨天':diff<=7?'过去 7 天':'更早';
+}
+function renderConvs(freshId){
+  const el=$('#h-list');
+  $('#h-foot').textContent=convs.length?`共 ${convs.length} 条 · 保存在本机`:'对话记录保存在本机';
+  if(!convs.length){ el.innerHTML=`<div class="h-empty">${I('msg')}还没有对话记录<br>提问后会自动保存在这里</div>`; return; }
+  let html='',g=null;
+  for(const c of convs){
+    const gg=groupOf(c.updated_at);
+    if(gg!==g){ g=gg; html+=`<div class="h-group">${g}</div>`; }
+    html+=`<div class="h-item ${c.id===currentId?'on':''} ${c.id===freshId?'fresh':''}" data-id="${esc(c.id)}" title="${esc(c.title)}">${I('msg')}<span class="t">${esc(c.title)}</span><button class="h-del" title="删除这条对话">${I('trash')}</button></div>`;
+  }
+  el.innerHTML=html;
+}
+async function loadConvs(){
+  try{ const r=await fetch('/api/conversations'); convs=r.ok?await r.json():[]; }catch(e){ convs=[]; }
+  renderConvs(); window.__convReady=true;
+}
+function setTitle(t){ const el=$('#c-title'); el.textContent=t||SUB_DEFAULT; el.classList.toggle('t',!!t); }
+function touchConv(id,title,isNew){
+  let c=convs.find(x=>x.id===id);
+  const fresh=!c;
+  if(!c){ c={id,title,created_at:localISO(),turns:0}; }
+  c.updated_at=localISO(); if(isNew&&title) c.title=title;
+  convs=[c,...convs.filter(x=>x.id!==id)];
+  renderConvs(fresh?id:null);
+}
+function newChat(){
+  if(busy) return;
+  currentId=null; chat.innerHTML=WELCOME; stick=true;
+  resetSide(); renderConvs(); setTitle(''); $('#q').focus();
+}
+function replayTurn(t){
+  const col=beginTurn(t.user||''), turn=makeTurn(col);
+  for(const ev of (t.events||[])){
+    if(ev.type==='text'){ turn.handle({type:'text_delta',content:ev.content||''}); turn.handle({type:'text_end'}); }
+    else turn.handle(ev);
+  }
+  if(t.seconds!==null&&t.seconds!==undefined) turn.handle({type:'done'});
+  stat.sec=+t.seconds||0; renderStats();
+}
+async function openConv(id){
+  let conv;
+  try{ const r=await fetch('/api/conversations/'+encodeURIComponent(id)); if(!r.ok) throw new Error(r.status); conv=await r.json(); }
+  catch(e){ await loadConvs(); return; }
+  currentId=id; renderConvs(); setTitle(conv.title);
+  chat.style.scrollBehavior='auto'; chat.innerHTML=''; stick=true; resetSide();
+  for(const t of (conv.turns||[])) replayTurn(t);
+  if(!(conv.turns||[]).length) chat.innerHTML=WELCOME;
+  chat.scrollTop=chat.scrollHeight;
+  setTimeout(()=>{ chat.scrollTop=chat.scrollHeight; chat.style.scrollBehavior=''; },80);
+}
+$('#h-list').addEventListener('click',async e=>{
+  const item=e.target.closest('.h-item'); if(!item) return;
+  const id=item.dataset.id, del=e.target.closest('.h-del');
+  if(del){
+    e.stopPropagation();
+    if(busy&&id===currentId) return;
+    if(!del.classList.contains('arm')){                       // 第一次点：变红，再点一次才真的删除
+      del.classList.add('arm'); del.title='再点一次确认删除';
+      setTimeout(()=>{ del.classList.remove('arm'); del.title='删除这条对话'; },2500);
+      return;
+    }
+    try{ await fetch('/api/conversations/'+encodeURIComponent(id),{method:'DELETE'}); }catch(err){}
+    convs=convs.filter(c=>c.id!==id);
+    if(id===currentId) newChat(); else renderConvs();
+    return;
+  }
+  if(busy||id===currentId) return;
+  openConv(id);
+});
+$('#h-new').onclick=newChat;
+$('#newchat').onclick=newChat;
+function setSidebar(on){ document.body.classList.toggle('sb-off',!on); try{ localStorage.setItem('diag-sidebar',on?'1':'0'); }catch(e){} }
+$('#sb-toggle').onclick=()=>setSidebar(document.body.classList.contains('sb-off'));
+(()=>{ let on=innerWidth>=1100; try{ const v=localStorage.getItem('diag-sidebar'); if(v!==null) on=v==='1'; }catch(e){} document.body.classList.toggle('sb-off',!on); })();
+
+/* ---------- 发送 ---------- */
+function setBusy(b){
+  busy=b; $('#send').disabled=b; $('#newchat').disabled=b; $('#h-new').disabled=b;
+  $('#q').placeholder=b?'正在诊断，请稍候…':'向设备诊断助手提问，例如：缸盖线的设备状态怎么样？';
+}
+async function send(text){
+  text=(text??$('#q').value).trim(); if(!text||busy) return;
+  setBusy(true); stick=true; window.__done=false; $('#q').value='';
+  const col=beginTurn(text), turn=makeTurn(col);
+  stat.live=true; stat.t0=performance.now(); stat.timer=setInterval(renderStats,100);
+  light(['n-user','w1']);
+  let finished=false;
+  const finish=secs=>{
+    if(finished) return; finished=true;
+    stat.sec=(typeof secs==='number')?secs:(performance.now()-stat.t0)/1000;
+    stat.live=false; clearInterval(stat.timer); renderStats(); light([]); setBusy(false);
+    window.__stats={calls:stat.calls,seconds:+stat.sec.toFixed(1),tools:stat.tools.size};
+    window.__done=true; scroll();
+  };
+  try{
+    const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,conversation_id:currentId})});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
+    while(true){
+      const {value,done}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true}).replace(/\r\n/g,'\n');
+      let i; while((i=buf.indexOf('\n\n'))>=0){
+        const block=buf.slice(0,i); buf=buf.slice(i+2);
+        const data=block.split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).replace(/^ /,'')).join('\n');
+        if(!data) continue;
+        const ev=JSON.parse(data);
+        if(ev.type==='conversation'){ currentId=ev.id; touchConv(ev.id,ev.title,ev.new); setTitle((convs.find(c=>c.id===ev.id)||{}).title||ev.title); }
+        else if(ev.type==='title'){ const c=convs.find(x=>x.id===ev.id); if(c){ c.title=ev.title; renderConvs(); } if(currentId===ev.id) setTitle(ev.title); }
+        else{ turn.handle(ev); if(ev.type==='done') finish(ev.seconds); }
+      }
+    }
+  }catch(e){ if(!finished) turn.fail('连接失败：'+e); }
+  finish();
+}
+$('#send').onclick=()=>send();
+$('#q').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.isComposing) send(); });
+
+/* ---------- 启动 ---------- */
+resetSide(); loadConvs();
+fetch('/api/info').then(r=>r.json()).then(j=>{
+  $('#p-model').textContent=j.model;
+  $('#p-mcp-t').textContent=`MCP 已连接 · ${j.tools.length} 个工具`;
+  $('#p-mcp').classList.add('on');
+  window.__ready=true;
+}).catch(()=>{ $('#p-mcp-t').textContent='服务未连接'; });
+</script>
+</body>
+</html>

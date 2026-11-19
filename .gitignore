@@ -1,0 +1,19 @@
+# 密钥和本机配置：绝不能进版本库
+.env
+*.env
+!.env.example
+
+# 运行时生成的内容
+diag_agent/conversations/
+diag_tools/reports/
+*.log
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 录制演示视频的临时文件
+*.narration.wav
